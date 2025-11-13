@@ -2,6 +2,9 @@
 using BepInEx.Configuration;
 using BepInEx.Logging;
 using HarmonyLib;
+
+using PeakStats.MonoBehaviours;
+
 using System;
 using System.Collections.Generic;
 using TMPro;
@@ -121,6 +124,107 @@ public partial class Plugin : BaseUnityPlugin
             }
         }
     }
+
+    public static void UpdateCharacterBarTexts(CharacterStaminaBar characterStaminaBar)
+    {
+        if (characterStaminaBar.observedCharacter == null) return;
+
+        var id = characterStaminaBar.GetInstanceID();
+        float currentStaminaSize = Mathf.Max(0f, characterStaminaBar.observedCharacter.data.currentStamina * characterStaminaBar.fullBarRectTransform.sizeDelta.x);
+        string staminaBarKey = id + "_Stamina";
+
+        if (!Plugin.lastKnownData.ContainsKey(staminaBarKey) || Plugin.lastKnownData[staminaBarKey] != currentStaminaSize)
+        {
+            if (currentStaminaSize >= 30f)
+            {
+                if (Plugin.configRoundStamina.Value)
+                {
+                    Plugin.barTexts[staminaBarKey].text = Mathf.Round(currentStaminaSize / 6f).ToString();
+                }
+                else
+                {
+                    Plugin.barTexts[staminaBarKey].text = (currentStaminaSize / 6f).ToString("F1");
+                }
+                Plugin.barTexts[staminaBarKey].gameObject.SetActive(true);
+            }
+            else if (currentStaminaSize >= 15f)
+            {
+                Plugin.barTexts[staminaBarKey].text = Mathf.Round(currentStaminaSize / 6f).ToString();
+                Plugin.barTexts[staminaBarKey].gameObject.SetActive(true);
+            }
+            else
+            {
+                Plugin.barTexts[staminaBarKey].gameObject.SetActive(false);
+            }
+            Plugin.lastKnownData[staminaBarKey] = currentStaminaSize;
+        }
+
+        foreach (CharacterBarAffliction affliction in characterStaminaBar.characterBarAfflictions)
+        {
+            affliction.FetchDesiredSize();
+            string afflictionKey = id + "_" + affliction.name;
+            if (!Plugin.lastKnownData.ContainsKey(afflictionKey) || Plugin.lastKnownData[afflictionKey] != affliction.size)
+            {
+                if (affliction.size >= 30f)
+                {
+                    if (Plugin.configRoundAffliction.Value)
+                    {
+                        Plugin.barTexts[afflictionKey].text = Mathf.Round(affliction.size / 6f).ToString();
+                    }
+                    else
+                    {
+                        Plugin.barTexts[afflictionKey].text = (affliction.size / 6f).ToString("F1").Replace(".0", "");
+                    }
+                }
+                else if (affliction.size >= 15f)
+                {
+                    Plugin.barTexts[afflictionKey].text = Mathf.Round(affliction.size / 6f).ToString();
+                }
+                Plugin.lastKnownData[afflictionKey] = affliction.size;
+            }
+        }
+    }
+
+    public static void InitCharacterStaminaInfo(CharacterStaminaBar characterStaminaBar)
+    {
+        var id = characterStaminaBar.GetInstanceID();
+        string staminaBarKey = id + "_Stamina";
+        string maxStaminaBarKey = id + "_MaxStamina";
+        var fontSize = Plugin.configFontSize.Value;
+        Plugin.AddTextObject(characterStaminaBar.staminaBarRectTransform.gameObject, staminaBarKey);
+        foreach (CharacterBarAffliction affliction in characterStaminaBar.characterBarAfflictions)
+        {
+            Plugin.AddTextObject(affliction.gameObject, id + "_" + affliction.gameObject.name);
+        }
+
+    }
+
+    public static class FixPeakStatsPatches
+    {
+        [HarmonyPatch(typeof(PeakStats.MonoBehaviours.CharacterStaminaBar), "Update")]
+        [HarmonyPostfix]
+        public static void Update(CharacterStaminaBar __instance)
+        {
+            try
+            {
+                var id = __instance.GetInstanceID();
+                if (!Plugin.barTexts.ContainsKey(id + "_Stamina"))
+                {
+                    Plugin.InitCharacterStaminaInfo(__instance);
+                }
+                if (Character.observedCharacter != null)
+                {
+                    Plugin.UpdateCharacterBarTexts(__instance);
+                }
+            }
+            catch (Exception e)
+            {
+                Plugin.Log.LogError(e.Message + e.StackTrace);
+            }
+        }
+    }
+
+    public static bool peakstatus { get; set; }
 
     private static void InitStaminaInfo(StaminaBar staminaBar)
     {

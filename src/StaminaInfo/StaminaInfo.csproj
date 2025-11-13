@@ -1,4 +1,4 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <!-- This is the most appropriate target framework for the game's Unity version. -->
@@ -10,6 +10,14 @@
     <!-- This is the version number of your mod. -->
     <Version>1.0.2</Version>
   </PropertyGroup>
+
+  <ItemGroup>
+    <Reference Include="PeakStats" Publicize="true">
+      <HintPath>..\..\lib\PeakStats.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
+
 
   <!--
   How to include thunderstore mods as dependencies via nuget
