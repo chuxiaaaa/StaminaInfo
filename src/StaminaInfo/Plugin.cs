@@ -236,6 +236,14 @@ public partial class Plugin : BaseUnityPlugin
         {
             AddTextObject(affliction.gameObject, affliction.gameObject.name);
         }
+        if (!peakstatus)
+        {
+            peakstatus = true;
+            if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("nickklmao.peakstats"))
+            {
+                Harmony.CreateAndPatchAll(typeof(FixPeakStatsPatches));
+            }
+        }
     }
 
     private static void AddTextObject(GameObject gameObj, string barName)
