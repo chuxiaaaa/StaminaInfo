@@ -1,14 +1,20 @@
 ﻿using BepInEx;
 using BepInEx.Configuration;
 using BepInEx.Logging;
+
 using HarmonyLib;
 
-using PeakStats.MonoBehaviours;
+using Peak.Afflictions;
 
 using System;
 using System.Collections.Generic;
+
 using TMPro;
+
 using UnityEngine;
+
+using static CharacterAfflictions;
+
 
 namespace StaminaInfo;
 
@@ -16,13 +22,14 @@ namespace StaminaInfo;
 public partial class Plugin : BaseUnityPlugin
 {
     internal static ManualLogSource Log { get; private set; } = null!;
-    private static Dictionary<string, TextMeshProUGUI> barTexts;
-    private static Dictionary<string, float> lastKnownData;
-    private static GUIManager guiManager;
-    private static ConfigEntry<float> configFontSize;
-    private static ConfigEntry<float> configOutlineWidth;
-    private static ConfigEntry<Boolean> configRoundStamina;
-    private static ConfigEntry<Boolean> configRoundAffliction;
+    public static Dictionary<string, TextMeshProUGUI> barTexts;
+    public static Dictionary<string, float> lastKnownData;
+    public static Dictionary<string, float> lastKnownData2;
+    public static GUIManager guiManager;
+    public static ConfigEntry<float> configFontSize;
+    public static ConfigEntry<float> configOutlineWidth;
+    public static ConfigEntry<Boolean> configRoundStamina;
+    public static ConfigEntry<Boolean> configRoundAffliction;
 
     private void Awake()
     {
@@ -47,6 +54,7 @@ public partial class Plugin : BaseUnityPlugin
                 {
                     barTexts = new Dictionary<string, TextMeshProUGUI>();
                     lastKnownData = new Dictionary<string, float>();
+                    lastKnownData2 = new Dictionary<string, float>();
                     InitStaminaInfo(__instance);
                 }
                 else
@@ -109,120 +117,146 @@ public partial class Plugin : BaseUnityPlugin
 
         foreach (BarAffliction affliction in staminaBar.afflictions)
         {
-            if (lastKnownData[affliction.name] != affliction.size)
+            if (Time.time - lastKnownData[affliction.name] > 0.5f && affliction.size > 0)
             {
-                if (affliction.size >= 30f)
+                bool needUpdate = affliction.afflictionType != STATUSTYPE.Weight && affliction.afflictionType != STATUSTYPE.Injury && affliction.afflictionType != STATUSTYPE.Curse;
+                if (lastKnownData[affliction.name] != affliction.size || needUpdate)
                 {
-                    if (configRoundAffliction.Value) { barTexts[affliction.name].text = Mathf.Round(affliction.size / 6f).ToString(); }
-                    else { barTexts[affliction.name].text = (affliction.size / 6f).ToString("F1").Replace(".0", ""); }
-                }
-                else if (affliction.size >= 15f)
-                {
-                    barTexts[affliction.name].text = Mathf.Round(affliction.size / 6f).ToString();
-                }
-                lastKnownData[affliction.name] = affliction.size;
-            }
-        }
-    }
-
-    public static void UpdateCharacterBarTexts(CharacterStaminaBar characterStaminaBar)
-    {
-        if (characterStaminaBar.observedCharacter == null) return;
-
-        var id = characterStaminaBar.GetInstanceID();
-        float currentStaminaSize = Mathf.Max(0f, characterStaminaBar.observedCharacter.data.currentStamina * characterStaminaBar.fullBarRectTransform.sizeDelta.x);
-        string staminaBarKey = id + "_Stamina";
-
-        if (!Plugin.lastKnownData.ContainsKey(staminaBarKey) || Plugin.lastKnownData[staminaBarKey] != currentStaminaSize)
-        {
-            if (currentStaminaSize >= 30f)
-            {
-                if (Plugin.configRoundStamina.Value)
-                {
-                    Plugin.barTexts[staminaBarKey].text = Mathf.Round(currentStaminaSize / 6f).ToString();
-                }
-                else
-                {
-                    Plugin.barTexts[staminaBarKey].text = (currentStaminaSize / 6f).ToString("F1");
-                }
-                Plugin.barTexts[staminaBarKey].gameObject.SetActive(true);
-            }
-            else if (currentStaminaSize >= 15f)
-            {
-                Plugin.barTexts[staminaBarKey].text = Mathf.Round(currentStaminaSize / 6f).ToString();
-                Plugin.barTexts[staminaBarKey].gameObject.SetActive(true);
-            }
-            else
-            {
-                Plugin.barTexts[staminaBarKey].gameObject.SetActive(false);
-            }
-            Plugin.lastKnownData[staminaBarKey] = currentStaminaSize;
-        }
-
-        foreach (CharacterBarAffliction affliction in characterStaminaBar.characterBarAfflictions)
-        {
-            affliction.FetchDesiredSize();
-            string afflictionKey = id + "_" + affliction.name;
-            if (!Plugin.lastKnownData.ContainsKey(afflictionKey) || Plugin.lastKnownData[afflictionKey] != affliction.size)
-            {
-                if (affliction.size >= 30f)
-                {
-                    if (Plugin.configRoundAffliction.Value)
+                    if (affliction.size >= 30f)
                     {
-                        Plugin.barTexts[afflictionKey].text = Mathf.Round(affliction.size / 6f).ToString();
+                        if (configRoundAffliction.Value) { barTexts[affliction.name].text = Mathf.Round(affliction.size / 6f).ToString(); }
+                        else { barTexts[affliction.name].text = (affliction.size / 6f).ToString("F1").Replace(".0", ""); }
                     }
-                    else
+                    else if (affliction.size >= 15f)
                     {
-                        Plugin.barTexts[afflictionKey].text = (affliction.size / 6f).ToString("F1").Replace(".0", "");
+                        barTexts[affliction.name].text = Mathf.Round(affliction.size / 6f).ToString();
                     }
                 }
-                else if (affliction.size >= 15f)
+                if (needUpdate)
                 {
-                    Plugin.barTexts[afflictionKey].text = Mathf.Round(affliction.size / 6f).ToString();
+                    float timeRemaining = GetReductionTimeRemaining(affliction.afflictionType);
+                    if (timeRemaining != 0)
+                    {
+                        barTexts[affliction.name].text += $"({FormatTime(timeRemaining)})";
+                    }
                 }
-                Plugin.lastKnownData[afflictionKey] = affliction.size;
+                lastKnownData2[affliction.name] = affliction.size;
+                lastKnownData[affliction.name] = Time.time;
             }
         }
     }
 
-    public static void InitCharacterStaminaInfo(CharacterStaminaBar characterStaminaBar)
+
+    private static float GetReductionTimeRemaining(STATUSTYPE statusType)
     {
-        var id = characterStaminaBar.GetInstanceID();
-        string staminaBarKey = id + "_Stamina";
-        string maxStaminaBarKey = id + "_MaxStamina";
-        var fontSize = Plugin.configFontSize.Value;
-        Plugin.AddTextObject(characterStaminaBar.staminaBarRectTransform.gameObject, staminaBarKey);
-        foreach (CharacterBarAffliction affliction in characterStaminaBar.characterBarAfflictions)
+        var afflictions = Character.observedCharacter?.refs?.afflictions;
+        if (afflictions == null) return 0f;
+        if (statusType == STATUSTYPE.Thorns)
         {
-            Plugin.AddTextObject(affliction.gameObject, id + "_" + affliction.gameObject.name);
+            var time = 0f;
+            //bool solo = Character.AllCharacters.Count == 1;
+            int count = 0;
+            foreach (var item in afflictions.physicalThorns)
+            {
+                if (!item.stuckIn)
+                {
+                    continue;
+                }
+                count++;
+                time += Time.time - item.popOutTime;
+            }
+            if (count == 0)
+            {
+                return 0;
+            }
+            return Mathf.Abs(time) / count;
+        }
+        // 直接从afflictions获取当前状态值
+        float currentStatus = afflictions.GetCurrentStatus(statusType);
+        if (currentStatus <= 0f) return 0f;
+
+        float reductionRate = GetReductionRate(afflictions, statusType);
+        if (reductionRate <= 0f) return 0f;
+
+        float cooldown = GetCooldown(afflictions, statusType);
+        float lastAddedTime = afflictions.LastAddedStatus(statusType);
+        float currentTime = Time.time;
+
+        // 检查是否在冷却时间内
+        if (cooldown > 0f && currentTime - lastAddedTime < cooldown)
+        {
+            float cooldownRemaining = cooldown - (currentTime - lastAddedTime);
+            float reductionTime = currentStatus / reductionRate;
+            return cooldownRemaining + reductionTime;
         }
 
+        // 直接计算减少时间：当前状态值 ÷ 每秒减少速率
+        return currentStatus / reductionRate;
     }
 
-    public static class FixPeakStatsPatches
+    // 获取减少速率 - 从afflictions对象中获取
+    private static float GetReductionRate(CharacterAfflictions afflictions, STATUSTYPE statusType)
     {
-        [HarmonyPatch(typeof(PeakStats.MonoBehaviours.CharacterStaminaBar), "Update")]
-        [HarmonyPostfix]
-        public static void Update(CharacterStaminaBar __instance)
+        switch (statusType)
         {
-            try
-            {
-                var id = __instance.GetInstanceID();
-                if (!Plugin.barTexts.ContainsKey(id + "_Stamina"))
-                {
-                    Plugin.InitCharacterStaminaInfo(__instance);
-                }
-                if (Character.observedCharacter != null)
-                {
-                    Plugin.UpdateCharacterBarTexts(__instance);
-                }
-            }
-            catch (Exception e)
-            {
-                Plugin.Log.LogError(e.Message + e.StackTrace);
-            }
+            case STATUSTYPE.Poison:
+                return afflictions.poisonReductionPerSecond;
+            case STATUSTYPE.Hot:
+                return afflictions.hotReductionPerSecond;
+            case STATUSTYPE.Spores:
+                return afflictions.sporesReductionPerSecond;
+            case STATUSTYPE.Drowsy:
+                return afflictions.drowsyReductionPerSecond;
+            default:
+                return 0f;
         }
     }
+
+    // 获取冷却时间 - 从afflictions对象中获取
+    private static float GetCooldown(CharacterAfflictions afflictions, STATUSTYPE statusType)
+    {
+        switch (statusType)
+        {
+            case STATUSTYPE.Poison:
+                return afflictions.poisonReductionCooldown;
+            case STATUSTYPE.Hot:
+                return afflictions.hotReductionCooldown;
+            case STATUSTYPE.Spores:
+                return afflictions.sporesReductionCooldown;
+            case STATUSTYPE.Drowsy:
+                return afflictions.drowsyReductionCooldown;
+      
+            default:
+                return 0f;
+        }
+    }
+
+    // 格式化时间显示
+    private static string FormatTime(float seconds)
+    {
+        if (seconds < 60f)
+        {
+            return Mathf.CeilToInt(seconds).ToString();
+        }
+        else if (seconds < 3600f)
+        {
+            int minutes = Mathf.FloorToInt(seconds / 60f);
+            int remainingSeconds = Mathf.CeilToInt(seconds % 60f);
+            return $"{minutes}:{remainingSeconds:D2}";
+        }
+        else
+        {
+            int hours = Mathf.FloorToInt(seconds / 3600f);
+            int minutes = Mathf.FloorToInt((seconds % 3600f) / 60f);
+            return $"{hours}:{minutes:D2}";
+        }
+    }
+
+   
+
+ 
+
+  
 
     public static bool peakstatus { get; set; }
 
@@ -241,12 +275,14 @@ public partial class Plugin : BaseUnityPlugin
             peakstatus = true;
             if (BepInEx.Bootstrap.Chainloader.PluginInfos.ContainsKey("nickklmao.peakstats"))
             {
-                Harmony.CreateAndPatchAll(typeof(FixPeakStatsPatches));
+                var harmony = new Harmony(Plugin.Id);
+                var patchType = Type.GetType("StaminaInfo.FixPeakStatsPatches, com.github.chuxiaaaa.StaminaInfo");
+                harmony.PatchAll(patchType);
             }
         }
     }
 
-    private static void AddTextObject(GameObject gameObj, string barName)
+    public static void AddTextObject(GameObject gameObj, string barName)
     {
         TMPro.TMP_FontAsset font = guiManager.heroDayText.font;
         GameObject staminaInfo = new GameObject("StaminaInfo");
@@ -264,7 +300,7 @@ public partial class Plugin : BaseUnityPlugin
         staminaInfoText.verticalAlignment = VerticalAlignmentOptions.Capline;
         staminaInfoText.textWrappingMode = TextWrappingModes.NoWrap;
         staminaInfoText.text = "";
-
+        staminaInfoText.transform.localScale = new Vector3(1f, 1f, 1f);
         barTexts.Add(barName, staminaInfoText);
         lastKnownData.Add(barName, 0f);
         staminaInfoText.outlineWidth = configOutlineWidth.Value; // Buggy?
